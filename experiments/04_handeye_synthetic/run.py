@@ -47,6 +47,10 @@ from calibration import (  # noqa: E402
 # 1e-6 deja margen para errores de redondeo en float64 sin ocultar errores reales.
 NOISE_FREE_TOL = 1e-6
 
+# Umbral para contar un resultado como "error grosero" (fallo catastrófico del método).
+GROSS_TRANS_MM = 100.0
+GROSS_ROT_DEG = 10.0
+
 # Paleta categórica validada (orden fijo, nunca ciclado) + marcador por método,
 # para que el método no se identifique solo por color.
 METHOD_STYLE = {
@@ -223,11 +227,14 @@ def summarize_rows(rows):
         st = summarize([r["trans_err_mm"] for r in rs])
         sr = summarize([r["rot_err_deg"] for r in rs])
         sc = summarize([r["consist_trans_rms_mm"] for r in rs])
+        gross = sum(1 for r in rs if r["trans_err_mm"] > GROSS_TRANS_MM or r["rot_err_deg"] > GROSS_ROT_DEG)
         out.append(dict(zip(("sweep", "pose_mode", "method", "n_poses", "noise_trans_mm", "noise_rot_deg"), key),
-                        reps=len(rs), failures=sum(r["failed"] for r in rs),
-                        trans_mean_mm=st["mean"], trans_std_mm=st["std"], trans_p95_mm=st["p95"],
-                        rot_mean_deg=sr["mean"], rot_std_deg=sr["std"], rot_p95_deg=sr["p95"],
-                        consist_trans_rms_mean_mm=sc["mean"]))
+                        reps=len(rs), failures=sum(r["failed"] for r in rs), gross_errors=gross,
+                        trans_mean_mm=st["mean"], trans_std_mm=st["std"], trans_median_mm=st["median"],
+                        trans_p95_mm=st["p95"],
+                        rot_mean_deg=sr["mean"], rot_std_deg=sr["std"], rot_median_deg=sr["median"],
+                        rot_p95_deg=sr["p95"],
+                        consist_trans_rms_median_mm=sc["median"]))
     return out
 
 
@@ -246,15 +253,17 @@ def print_table(summary, sweep, title):
         return
     print(f"\n{title}")
     hdr = (f"{'modo':<17}{'método':<11}{'poses':>5}{'σt mm':>7}{'σr °':>6} | "
-           f"{'trans media±std (p95) mm':>28} | {'rot media±std (p95) °':>25} | fallos")
+           f"{'trans media±std [mediana, p95] mm':>40} | {'rot media±std [mediana, p95] °':>38} | "
+           f"groseros | fallos")
     print(hdr)
     print("-" * len(hdr))
     for s in rows:
         print(f"{s['pose_mode']:<17}{s['method']:<11}{s['n_poses']:>5}{s['noise_trans_mm']:>7.2f}"
               f"{s['noise_rot_deg']:>6.2f} | "
-              f"{s['trans_mean_mm']:>10.4g}±{s['trans_std_mm']:<8.3g}({s['trans_p95_mm']:>8.4g}) | "
-              f"{s['rot_mean_deg']:>8.4g}±{s['rot_std_deg']:<7.3g}({s['rot_p95_deg']:>8.4g}) | "
-              f"{s['failures']}/{s['reps']}")
+              f"{s['trans_mean_mm']:>10.4g}±{s['trans_std_mm']:<9.3g}[{s['trans_median_mm']:>8.4g},{s['trans_p95_mm']:>9.4g}] | "
+              f"{s['rot_mean_deg']:>9.4g}±{s['rot_std_deg']:<8.3g}[{s['rot_median_deg']:>8.4g},{s['rot_p95_deg']:>8.4g}] | "
+              f"{s['gross_errors']:>8} | {s['failures']}/{s['reps']}")
+    print(f"(groseros: error > {GROSS_TRANS_MM:g} mm o > {GROSS_ROT_DEG:g}°; fallos: excepción o resultado NaN)")
 
 
 def plot_sweep(summary, sweep, xkey, xlabel, title, path, methods, xticklabels=None):
@@ -267,14 +276,15 @@ def plot_sweep(summary, sweep, xkey, xlabel, title, path, methods, xticklabels=N
     rows = [s for s in rows if s["noise_trans_mm"] > 0 or s["noise_rot_deg"] > 0]
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), constrained_layout=True)
     fig.patch.set_facecolor("#fcfcfb")
-    for ax, (mean_k, p95_k, ylab) in zip(axes, [("trans_mean_mm", "trans_p95_mm", "Error de traslación (mm)"),
-                                               ("rot_mean_deg", "rot_p95_deg", "Error de rotación (°)")]):
+    # Mediana (sólida) y p95 (punteada): la media se distorsiona con fallos catastróficos raros.
+    for ax, (mean_k, p95_k, ylab) in zip(axes, [("trans_median_mm", "trans_p95_mm", "Error de traslación (mm)"),
+                                               ("rot_median_deg", "rot_p95_deg", "Error de rotación (°)")]):
         ax.set_facecolor("#fcfcfb")
         for m in methods:
             rs = sorted((r for r in rows if r["method"] == m), key=lambda r: r[xkey])
             x = [r[xkey] for r in rs]
             color, marker = METHOD_STYLE.get(m, ("#52514e", "o"))
-            ax.plot(x, [r[mean_k] for r in rs], color=color, marker=marker, lw=2, ms=6, label=f"{m} (media)")
+            ax.plot(x, [r[mean_k] for r in rs], color=color, marker=marker, lw=2, ms=6, label=m)
             ax.plot(x, [r[p95_k] for r in rs], color=color, lw=1, ls="--", alpha=0.8)
         ax.set_yscale("log")
         ax.set_xlabel(xlabel, color="#52514e")
@@ -286,7 +296,7 @@ def plot_sweep(summary, sweep, xkey, xlabel, title, path, methods, xticklabels=N
         if xticklabels:
             ax.set_xticks(list(xticklabels.keys()))
             ax.set_xticklabels(list(xticklabels.values()))
-    axes[0].legend(frameon=False, fontsize=8, title="línea sólida = media, punteada = p95", title_fontsize=8)
+    axes[0].legend(frameon=False, fontsize=8, title="sólida = mediana, punteada = p95", title_fontsize=8)
     fig.suptitle(title, color="#0b0b0b")
     fig.savefig(path, dpi=150)
     plt.close(fig)

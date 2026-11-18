@@ -49,10 +49,14 @@ def consistency_residual(T_base_gripper_list, T_cam_target_list, T_base_cam_est)
 
 
 def summarize(values) -> dict:
-    """Media, desviación estándar y percentil 95 ignorando NaN; incluye ``n`` válidos."""
+    """Media, desviación estándar, mediana y percentil 95 ignorando NaN; incluye ``n`` válidos.
+
+    La media y la desviación son sensibles a fallos catastróficos ocasionales
+    (p. ej. Daniilidis); por eso se reportan también mediana y p95.
+    """
     v = np.asarray(values, dtype=float)
     v = v[np.isfinite(v)]
     if v.size == 0:
-        return {"mean": np.nan, "std": np.nan, "p95": np.nan, "n": 0}
+        return {"mean": np.nan, "std": np.nan, "median": np.nan, "p95": np.nan, "n": 0}
     return {"mean": float(v.mean()), "std": float(v.std(ddof=1)) if v.size > 1 else 0.0,
-            "p95": float(np.percentile(v, 95)), "n": int(v.size)}
+            "median": float(np.median(v)), "p95": float(np.percentile(v, 95)), "n": int(v.size)}
