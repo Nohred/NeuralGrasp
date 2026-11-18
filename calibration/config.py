@@ -33,6 +33,7 @@ class SceneConfig:
     """Parámetros de la escena eye-to-hand (cámara fija, tablero en el gripper)."""
 
     # Variante del robot (alcance en mm) -> define la caja de trabajo.
+    # Confirmado por el usuario: el modelo del simulador (RobotStudio) es el de 475 mm.
     reach_mm: float = 475.0
     # Cámara fija ~1 m frente al robot, mirando hacia la zona de trabajo.
     cam_position_mm: tuple = (1100.0, 0.0, 500.0)

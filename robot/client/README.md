@@ -2,7 +2,7 @@
 
 ## Qué es
 
-`rapid_client.py` contiene la clase `RobotVisionController`, que habla con `robot/rapid/comm.mod`. Es **exactamente** la clase que antes vivía en `robot_comms.py` (raíz). Las secuencias de pick & place se separaron a `experiments/02_robot_pick_place/run.py`.
+`rapid_client.py` contiene la clase `RobotVisionController`, que habla con `robot/rapid/comm.mod`. Es la clase que antes vivía en `robot_comms.py` (raíz), sin cambios, más el método nuevo `get_pose()`. Las secuencias de pick & place se separaron a `experiments/02_robot_pick_place/run.py`.
 
 | Método | Comando enviado | Devuelve |
 |---|---|---|
@@ -11,6 +11,7 @@
 | `go_home()` | `HOME` | `True` si `OK` |
 | `move_pose_euler(x,y,z,rx,ry,rz)` | `MOVE_POSE,x,y,z,rx,ry,rz` (2 decimales) | `True` si `OK` |
 | `set_gripper(close)` | `GRIPPER,1` / `GRIPPER,0` | `True` si `OK` |
+| `get_pose()` | `GET_POSE` | `(x, y, z, q1, q2, q3, q4)` (mm, cuaternión RAPID) o `None`; para 4x4: `calibration.pose_rapid_to_T(*pose)` |
 | `disconnect()` | cierra el socket | — |
 
 No hay método para `GRASP` (ver `docs/known_issues.md`, R6).
@@ -54,4 +55,4 @@ python -m pytest tests/test_rapid_client.py -v
 
 ## Siguiente paso
 
-Cuando se haga la integración: un método `grasp(...)` y otro `get_pose()` (que requiere el comando nuevo en `comm.mod`).
+Verificar `get_pose()` contra RobotStudio (está **sin verificar**; solo se probó contra el servidor falso). Cuando se haga la integración, añadir un método `grasp(...)`.

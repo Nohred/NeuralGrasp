@@ -6,7 +6,7 @@ Módulos RAPID para el controlador virtual **OmniCore C30, RobotWare 7.21.5, IRB
 
 | Archivo | Módulo | Función | Estado |
 |---|---|---|---|
-| `comm.mod` | `ServidorVision` | Servidor **activo**: `HOME`, `MOVE_POSE`, `GRASP`, `GRIPPER` | probado por el usuario (según CLAUDE.md) |
+| `comm.mod` | `ServidorVision` | Servidor **activo**: `HOME`, `GET_POSE`, `MOVE_POSE`, `GRASP`, `GRIPPER` | probado por el usuario (según CLAUDE.md); **`GET_POSE` sin verificar en RobotStudio** (añadido el 2026-11-17, probado solo contra el servidor falso) |
 | `test.mod` | `ServidorPython` | Prueba de conectividad: `PING`, `GET_POSE` | probado por el usuario (según CLAUDE.md) |
 | `points.mod` | (sin `MODULE`) | `robtarget` obtenidos con jog: `pHome`, `pPlace1/2`, `cylinder`, `cube` | referencia; no carga tal cual (ver abajo) |
 
@@ -38,6 +38,7 @@ Después de editar un `.mod` hay que recargarlo y volver a hacer **PP to Main**.
 | Comando | Acción RAPID | Respuesta |
 |---|---|---|
 | `HOME` | `MoveJ pHome, v500, z50, tVision` | `OK` |
+| `GET_POSE` | `CRobT(\Tool:=tVision \WObj:=wobj0)` (no mueve nada) | `POSE,x,y,z,q1,q2,q3,q4`: mm con 2 decimales, cuaternión RAPID `[w,x,y,z]` con 6 decimales; ≤ 71 caracteres |
 | `MOVE_POSE,x,y,z,rx,ry,rz` | clona `CRobT`; `rot := OrientZYX(rz, ry, rx)`; `MoveL v100 fine` | `OK` / `ERR_FORMATO` |
 | `GRASP,x,y,z,?,ang` | `rot := OrientZYX(ang, 0, 180)`; `MoveL` (4.º valor sin usar; **no clona `CRobT`**) | `OK` / `ERR_FORMATO` |
 | `GRIPPER,1` / `GRIPPER,0` | `SetDO GripperOpen, 0` / `Set GripperOpen` | `OK` / `ERR_FORMATO` |
@@ -51,18 +52,18 @@ Las convenciones de orientación y cuaterniones están en [docs/coordinate_frame
 ## Qué esperar
 
 - Con `test.mod`: `PING` → `PONG`; `GET_POSE` → `POSE,x,y,z` (con `tool0`).
-- Con `comm.mod`: el robot se mueve en la estación y cada comando responde `OK`.
+- Con `comm.mod`: el robot se mueve en la estación y cada comando responde `OK`. Recién cargado, en `pHome`, `GET_POSE` debería responder algo como `POSE,281.85,5.73,310.95,0.044739,-0.811529,0.582552,-0.007207`. `NumToStr` puede omitir ceros finales; el cliente lo acepta.
 
 ## Limitaciones y problemas conocidos
 
 Detalle completo en [docs/known_issues.md](../../docs/known_issues.md) (R1-R11). Lo principal:
 - La pinza usa `GripperOpen`; `do_Gripper` está comentado (R1).
 - `GRASP` no clona `CRobT`, así que `robconf` y `extax` no se heredan (R2). `MOVE_POSE` puede dar errores de configuración con cambios grandes de orientación (R3).
-- `points.mod` no tiene `MODULE … ENDMODULE` (R8), y su cubo no coincide con el script de pick & place (R9).
-- Ningún comando de `comm.mod` devuelve la pose completa (R10).
+- `points.mod` no tiene `MODULE … ENDMODULE` (R8). Su cubo no coincide con el del script; por decisión del usuario **vale la pose del script** y `points.mod` se ignora para el cubo (R9).
 
-Ninguno de estos problemas se corrigió en la reorganización: el comportamiento es el mismo de antes.
+Ninguno de estos problemas se corrigió en la reorganización. El único cambio en `comm.mod` es el comando **nuevo** `GET_POSE`; los demás comandos se comportan igual que antes.
 
 ## Siguiente paso
 
-Añadir a `comm.mod` un `GET_POSE` que devuelva `x,y,z,q1..q4` de `tVision` (propuesta en `experiments/04_handeye_synthetic/README.md`), para grabar poses reales para la calibración mano-ojo.
+1. Recargar `comm.mod` en RobotStudio (Load Module + PP to Main) y probar `GET_POSE`, por ejemplo con `python -c "from robot.client import RobotVisionController as R; r=R(); r.connect(); print(r.get_pose()); r.disconnect()"`.
+2. Correr `python experiments/04_handeye_synthetic/run.py --poses robotstudio`, que además verifica la convención `OrientZYX` comparando la pose pedida con la leída.

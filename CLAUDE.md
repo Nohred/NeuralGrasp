@@ -37,9 +37,11 @@ Fuera del repo (`D:\Recuperacion\Escuela\9no Semestre\RobotVision_fuera_del_repo
 
 ```powershell
 conda activate neuralgrasp
-python -m pytest                                        # 90 tests, sin hardware
+python -m pytest                                        # 96 tests, sin hardware
 python experiments/04_handeye_synthetic/run.py          # --poses synthetic|csv|robotstudio, --n-reps, --seed, --methods, --out
 python experiments/04_handeye_synthetic/run.py --poses csv --csv experiments/04_handeye_synthetic/poses_example.csv
+python experiments/04_handeye_synthetic/run.py --poses robotstudio   # mueve el robot con MOVE_POSE y lee GET_POSE
+python experiments/04_handeye_synthetic/record_poses.py --out <csv>  # Enter = guardar GET_POSE (flujo con jog)
 python experiments/02_robot_pick_place/run.py           # con comm.mod en RobotStudio
 python experiments/01_robot_ping/test.py                # con test.mod en RobotStudio
 cd NeuralModel/robotic-grasping; python run_affordance_generator.py --network <checkpoint>
@@ -49,6 +51,9 @@ cd NeuralModel/robotic-grasping; python run_affordance_generator.py --network <c
 
 - `calibration.calibrate_eye_to_hand(T_base_gripper_list, T_cam_target_list, method)` → `T_base_cam`. Internamente pasa **las inversas** de las poses del robot a `cv2.calibrateHandEye` (que está planteada para cámara en la mano). No "arreglar" eso: hay un test negativo que demuestra que sin invertir el resultado es incorrecto.
 - "gripper" = TCP de `tVision`. El tablero va a 50 mm sobre z de la herramienta (escena sintética).
+- El robot del simulador es el **IRB 1100 de 475 mm** de alcance (confirmado por el usuario).
+- **`GET_POSE` en `comm.mod`** (añadido el 2026-11-17, rama `feature/get-pose`, **sin verificar en RobotStudio**): `GET_POSE` → `POSE,x,y,z,q1,q2,q3,q4` (`CRobT` de `tVision` en `wobj0`; mm con 2 decimales y cuaternión RAPID con 6; ≤ 71 caracteres). Cliente: `RobotVisionController.get_pose()`. Es el único cambio de protocolo; los demás comandos no cambiaron.
+- Cubo del pick & place: la pose válida es la del script (`z = 38.31`); `points.mod` se ignora para el cubo (decisión del usuario).
 - Daniilidis (OpenCV) tiene fallos catastróficos raros (~1% con ruido, error de ~180°); el residuo de consistencia los detecta sin verdad de terreno.
 
 ### Correcciones a lo de abajo
@@ -82,6 +87,7 @@ No es un repositorio git. No hay build, linter ni CI. **[ACTUALIZADO]** Ahora s�
 - Request/response síncrono, texto ASCII sin delimitador: un `sendall` → un `recv`. RAPID recibe en un `string` (máx. 80 caracteres), así que los mensajes deben ser cortos y no deben enviarse varios comandos sin esperar la respuesta.
 - Comandos (`CMD,v1,v2,...`, mm y grados, respecto a `wobj0` con la herramienta `tVision` cuyo TCP está en z=100 mm):
   - `HOME` → `MoveJ pHome`.
+  - **[ACTUALIZADO]** `GET_POSE` → `POSE,x,y,z,q1,q2,q3,q4` del TCP `tVision` en `wobj0` (comando nuevo; ver la sección de arriba).
   - `MOVE_POSE,x,y,z,rx,ry,rz` → `MoveL` con `OrientZYX(rz, ry, rx)`.
   - `GRASP,x,y,z,?,ang` → `MoveL` con orientación fija boca abajo y giro `ang` en Z (el 4.º valor se parsea pero no se usa). Aún no hay método en el cliente Python.
   - `GRIPPER,1|0` → `SetDO do_Gripper`. **La señal `do_Gripper` debe existir en la configuración de I/O del controlador**, si no, el módulo no carga (los comentarios "Descomentar..." están desactualizados: las líneas ya están activas). **[ACTUALIZADO]** Incorrecto: en `comm.mod` las líneas de `do_Gripper` están **comentadas** y se usa `GripperOpen` (`SetDO GripperOpen, 0` / `Set GripperOpen`). La señal que debe existir es `GripperOpen` (`docs/known_issues.md`, R1).

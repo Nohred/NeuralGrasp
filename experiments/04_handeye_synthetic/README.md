@@ -16,23 +16,28 @@ Estudio de la calibración `T_base_cam` (cámara fija, tablero ChArUco en el gri
 |---|---|---|---|
 | `synthetic` (por defecto) | muestreadas en la caja de trabajo, con semilla | simuladas | **ejecutado por Claude Code** |
 | `csv` | `--csv archivo` con columnas `x,y,z,q1,q2,q3,q4` (mm, cuaternión RAPID `[w,x,y,z]`), p. ej. grabadas con jog en RobotStudio con **`tVision` activa** | simuladas con la cámara sintética; se descartan las poses con tablero no visible (salvo `--no-visibility-filter`) | **ejecutado por Claude Code** con `poses_example.csv` (poses sintéticas, no de RobotStudio) |
-| `robotstudio` | — | — | **stub**: imprime qué hace falta y sale con código 2 |
+| `robotstudio` | el robot se **mueve** con `MOVE_POSE` a `--rs-n-poses` poses sintéticas (tablero visible) y se **lee** la pose real con `GET_POSE` de `comm.mod` | simuladas | **sin verificar en RobotStudio**; ejecutado por Claude Code contra el servidor falso |
 
-**Qué haría falta para `robotstudio`:** `comm.mod` no tiene un comando que devuelva la pose (y no se modificó). `test.mod` tiene `GET_POSE`, pero con `tool0` y solo `x,y,z`. Se necesitaría en `comm.mod` algo como:
+### Modo `robotstudio` (usa `GET_POSE` de `comm.mod`)
 
-```rapid
-ELSEIF msg = "GET_POSE" THEN
-    p_actual := CRobT(\Tool:=tVision \WObj:=wobj0);
-    SocketSend cliente \Str:="POSE," + NumToStr(p_actual.trans.x,2) + "," + NumToStr(p_actual.trans.y,2) + ","
-        + NumToStr(p_actual.trans.z,2) + "," + NumToStr(p_actual.rot.q1,5) + "," + NumToStr(p_actual.rot.q2,5) + ","
-        + NumToStr(p_actual.rot.q3,5) + "," + NumToStr(p_actual.rot.q4,5);
-```
+1. Muestrea `--rs-n-poses` poses sintéticas válidas, con la semilla `--seed`.
+2. Las **ordena** (vecino más cercano en orientación, partiendo de la pose actual leída con `GET_POSE`) para minimizar el cambio de orientación entre movimientos, porque `MOVE_POSE` hereda `robconf` de la pose actual (R3).
+3. Para cada una envía `MOVE_POSE,x,y,z,rx,ry,rz` (Euler calculado con `R_to_euler_rapid`). Si responde `OK`, lee `GET_POSE` y usa la pose **leída** como `T_base_gripper`.
+4. Compara la pose pedida con la leída. Si difieren en más de 0.5 mm o 0.1°, avisa que la convención `OrientZYX` no coincide. **Esto verifica en RobotStudio la convención de `docs/coordinate_frames.md`.**
+5. Guarda las poses leídas en `results/robotstudio_poses.csv`, reutilizable con `--poses csv` sin volver a mover el robot.
+6. Si RAPID se detiene (por ejemplo, por un error de movimiento o de alcance), el socket se cierra: el modo sigue con las poses que ya tenía y lo avisa. Habría que reiniciar `comm.mod` (PP to Main).
 
-Ojo con el límite de 80 caracteres de un `string` RAPID: la respuesta ronda los 70-75. Si no cabe, hay que partirla en dos respuestas o usar `\RawData`. El modo también tendría que mover el robot (`MOVE_POSE`) por una lista de poses y leer `GET_POSE` en cada una.
+Contra el servidor falso (que aplica `OrientZYX` de forma ideal), la diferencia pedida vs. leída es ≤ 0.007 mm / 0.007°, solo por el redondeo de los mensajes. **ejecutado por Claude Code**
+
+### Grabar poses con jog (`record_poses.py`)
+
+Para poses puestas a mano: conecta, y cada Enter lee `GET_POSE` y agrega una fila al CSV (`q` para terminar). **Sin verificar:** con el programa RAPID en ejecución no se puede hacer jog. Hay que detenerlo, hacer jog y reanudarlo con Play **sin** PP to Main; se espera que la conexión sobreviva a la pausa, pero no está comprobado.
 
 ## Requisitos
 
-Entorno conda `neuralgrasp` (ver `requirements.txt` de la raíz). Ni RobotStudio, ni cámara, ni GPU.
+- Entorno conda `neuralgrasp` (ver `requirements.txt` de la raíz). Sin cámara ni GPU.
+- Solo para `--poses robotstudio` y `record_poses.py`: RobotStudio con `robot/rapid/comm.mod` **recargado con `GET_POSE`** y en ejecución.
+- Alcance: el modelo del simulador es el IRB 1100 de **475 mm** (confirmado por el usuario; es el valor por defecto de `--reach`).
 
 ## Cómo ejecutar
 
@@ -50,6 +55,12 @@ python experiments/04_handeye_synthetic/run.py --noise-trans-mm 0,1,3 --noise-ro
 python experiments/04_handeye_synthetic/run.py --reach 580
 python experiments/04_handeye_synthetic/run.py --poses csv --csv experiments/04_handeye_synthetic/poses_example.csv
 python experiments/04_handeye_synthetic/run.py --help
+
+# Con RobotStudio (comm.mod con GET_POSE en ejecución)
+python experiments/04_handeye_synthetic/run.py --poses robotstudio --rs-dry-run          # solo muestra los MOVE_POSE
+python experiments/04_handeye_synthetic/run.py --poses robotstudio --rs-n-poses 20
+python experiments/04_handeye_synthetic/run.py --poses csv --csv experiments/04_handeye_synthetic/results/robotstudio_poses.csv
+python experiments/04_handeye_synthetic/record_poses.py --out experiments/04_handeye_synthetic/poses_jog.csv
 ```
 
 Salidas en `experiments/04_handeye_synthetic/results/` (ignorado por git):
@@ -98,8 +109,10 @@ Con poca variedad de rotación, el error de rotación se multiplica por ~5 y el 
 - OpenCV escribe `Hand-eye calibration failed! Not enough informative motions` en casos degenerados; el script silencia el log de OpenCV y cuenta esos casos como fallos.
 - `poses_example.csv` contiene poses **sintéticas** generadas por la librería (semilla 123), **no** grabadas en RobotStudio.
 
+- **Modo `robotstudio` sin verificar en RobotStudio.** Las poses sintéticas apuntan la herramienta hacia la cámara (casi horizontal, hacia +x), muy distinto de `pHome` (boca abajo). El primer `MoveL` desde HOME es el cambio de orientación más grande y podría fallar por `robconf` (R3) o por alcance; no se resuelve cinemática inversa. Si pasa, prueba primero con `--rs-dry-run`, lleva el robot con jog a una pose parecida a la primera y vuelve a correrlo.
+
 ## Siguiente paso
 
-1. Grabar 15-30 poses reales con jog (con `tVision` activa y orientaciones variadas, inclinaciones de decenas de grados) y correr `--poses csv`.
-2. Implementar el `GET_POSE` completo en `comm.mod` y el modo `robotstudio`.
+1. Recargar `comm.mod` en RobotStudio y correr `--poses robotstudio`: confirma `GET_POSE` y la convención `OrientZYX`, y deja un CSV de poses reales del simulador.
+2. Grabar 15-30 poses con orientaciones variadas (inclinaciones de decenas de grados) para la calibración con la cámara real.
 3. Usar `calibration.perturb_transform` sobre `T_base_cam` para el experimento de error de calibración vs. éxito de agarre.

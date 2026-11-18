@@ -9,7 +9,7 @@ Cada carpeta es un experimento autocontenido, con su propio README (Qué es / Re
 | [01_robot_ping](01_robot_ping/) | Conectividad Python ↔ RAPID (`PING`, `GET_POSE`) | ✔ (`test.mod`) | — | — | `python experiments/01_robot_ping/test.py` | probado por el usuario (según CLAUDE.md); sin verificar tras moverlo |
 | [02_robot_pick_place](02_robot_pick_place/) | Pick & place de cubo y cilindro con coordenadas de jog | ✔ (`comm.mod`) | — | — | `python experiments/02_robot_pick_place/run.py` | probado por el usuario (según CLAUDE.md); secuencia verificada contra el servidor falso por Claude Code |
 | [03_grasp_net_live](03_grasp_net_live/) | Predicción de agarres en vivo con GR-ConvNet, sin robot | — | ✔ (RealSense o webcam) | recomendada | `cd NeuralModel/robotic-grasping; python run_affordance_generator.py` | probado por el usuario en Linux (según CLAUDE.md); sin verificar en Windows |
-| [04_handeye_synthetic](04_handeye_synthetic/) | Calibración mano-ojo eye-to-hand con datos sintéticos: ruido, número de poses y casos degenerados | opcional (stub) | — | — | `python experiments/04_handeye_synthetic/run.py` | **ejecutado por Claude Code** (200 reps) |
+| [04_handeye_synthetic](04_handeye_synthetic/) | Calibración mano-ojo eye-to-hand con datos sintéticos: ruido, número de poses y casos degenerados | opcional (`--poses robotstudio`, usa `GET_POSE`) | — | — | `python experiments/04_handeye_synthetic/run.py` | **ejecutado por Claude Code** (200 reps); modo `robotstudio` solo contra el servidor falso, sin verificar en RobotStudio |
 
 ## Requisitos
 

@@ -34,7 +34,7 @@ En la consola, `[Robot] Conectado: Conectado a RAPID Vision`, luego los pasos 1-
 ## Limitaciones y problemas conocidos
 
 - El script no revisa las respuestas: si un `MOVE_POSE` falla (`ERR_*`), la secuencia sigue.
-- El cubo de `points.mod` (`z = 62.77`) no coincide con el de este script (`z = 38.31`) (R9).
+- El cubo de `points.mod` (`z = 62.77`) no coincide con el de este script (`z = 38.31`). **Vale la del script** (decisión del usuario); `points.mod` se ignora para el cubo (R9).
 - Errores de configuración posibles con `MoveL` (R3).
 
 ## Siguiente paso

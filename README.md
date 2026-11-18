@@ -68,7 +68,8 @@ cd NeuralModel/robotic-grasping; python run_affordance_generator.py
 
 | Parte | Estado |
 |---|---|
-| `calibration/` + `tests/` | **ejecutado por Claude Code**: 90 tests pasan |
+| `calibration/` + `tests/` | **ejecutado por Claude Code**: 96 tests pasan |
+| `GET_POSE` en `comm.mod` + `get_pose()` + modo `--poses robotstudio` | **ejecutado por Claude Code** contra el servidor falso; **sin verificar en RobotStudio** |
 | Experimento 04 | **ejecutado por Claude Code**: la prueba sin ruido da OK con los 5 métodos (~1e-11); Monte Carlo de 200 reps |
 | Cliente de sockets | **ejecutado por Claude Code** contra el servidor falso; sin verificar contra RobotStudio tras la reorganización |
 | `comm.mod`, pick & place, ping | probado por el usuario (según CLAUDE.md) |
@@ -81,6 +82,6 @@ Ver [docs/known_issues.md](docs/known_issues.md). Lo más relevante: la pinza us
 
 ## Siguiente paso
 
-1. Añadir a `comm.mod` un `GET_POSE` con `x,y,z,q1..q4` de `tVision`, para grabar poses de calibración.
+1. Recargar `comm.mod` (con `GET_POSE`) en RobotStudio y correr `python experiments/04_handeye_synthetic/run.py --poses robotstudio`, para verificar `GET_POSE` y la convención `OrientZYX` y obtener poses del simulador.
 2. Detectar ChArUco con la cámara real y calibrar con `calibration.calibrate_eye_to_hand`, juzgando el resultado con el residuo de consistencia.
 3. Integrar red → `T_base_cam` → comando `GRASP`, y montar el experimento "error de calibración vs. éxito de agarre" con `perturb_transform`.

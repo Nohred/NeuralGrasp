@@ -26,7 +26,7 @@ p_a = T_a_b @ p_b          T_a_c = T_a_b @ T_b_c          T_b_a = inv(T_a_b)
 |---|---|---|---|
 | `base` | Marco del robot | `wobj0` (= base del IRB 1100): x hacia el frente, z hacia arriba | `comm.mod` usa `\WObj:=wobj0` en todos los movimientos (verificado en el código) |
 | `gripper` | TCP de la herramienta | `tVision`: TCP a **z = 100 mm** de la brida, sin rotación (`[1,0,0,0]`) | `comm.mod:7` `PERS tooldata tVision := [TRUE,[[0,0,100],[1,0,0,0]],...]` (verificado en el código) |
-| `flange` | Brida (tool0) | Marco de la brida | `test.mod:40` (`GET_POSE`) devuelve la pose de `tool0`, **no** la de `tVision` |
+| `flange` | Brida (tool0) | Marco de la brida | `test.mod:40` (`GET_POSE` de la prueba) devuelve la pose de `tool0`. El `GET_POSE` de `comm.mod` devuelve la de **`tVision`** (`gripper`) |
 | `cam` | Marco óptico de la cámara | Convención OpenCV: **x a la derecha, y hacia abajo, z hacia adelante** (eje óptico) | Convención de OpenCV (`solvePnP`, `estimatePoseCharucoBoard`) |
 | `target` | Tablero ChArUco | Convención OpenCV: origen en una esquina, x/y en el plano del tablero, **z normal al tablero, apuntando hacia atrás de la cara impresa** | Convención de OpenCV; propia en `calibration/synthetic.py` |
 
@@ -65,7 +65,7 @@ Según el manual de referencia de RAPID, `OrientZYX(ZAngle, YAngle, XAngle)` arm
 R = Rz(rz) @ Ry(ry) @ Rx(rx)          (scipy: Rotation.from_euler("ZYX", [rz, ry, rx], degrees=True))
 ```
 
-Lo implementa `calibration.transforms.euler_rapid_to_R(rx, ry, rz)`, y su inversa `R_to_euler_rapid` equivale a `EulerZYX`. **Estado: sale del manual de RAPID y está probado en Python, pero sin verificar en RobotStudio.** Para confirmarlo: manda `MOVE_POSE,300,0,300,10,20,30`, lee el cuaternión del TCP (`tVision`, `wobj0`) en RobotStudio y compáralo con `R_to_quat_rapid(euler_rapid_to_R(10, 20, 30))`.
+Lo implementa `calibration.transforms.euler_rapid_to_R(rx, ry, rz)`, y su inversa `R_to_euler_rapid` equivale a `EulerZYX`. **Estado: sale del manual de RAPID y está probado en Python, pero sin verificar en RobotStudio.** Para confirmarlo de forma automática: `python experiments/04_handeye_synthetic/run.py --poses robotstudio` manda `MOVE_POSE` a varias poses, lee el cuaternión real con `GET_POSE` (TCP `tVision` en `wobj0`) y avisa si difiere de lo esperado en más de 0.1°. A mano: `MOVE_POSE,300,0,300,10,20,30`, luego `GET_POSE`, y comparar con `R_to_quat_rapid(euler_rapid_to_R(10, 20, 30))`.
 
 Casos útiles:
 - `rx=0, ry=180, rz=0` (lo que usa el pick & place) → `R = Ry(180°)` → cuaternión RAPID `[0, 0, 1, 0]`: herramienta boca abajo.

@@ -38,8 +38,11 @@ from calibration import (  # noqa: E402
     SyntheticScene,
     calibrate_eye_to_hand,
     consistency_residual,
+    R_to_euler_rapid,
+    T_to_pose_rapid,
     pose_error,
     pose_rapid_to_T,
+    rotation_angle_deg,
     summarize,
 )
 
@@ -61,25 +64,13 @@ METHOD_STYLE = {
     "daniilidis": ("#e87ba4", "v"),
 }
 
-ROBOTSTUDIO_HELP = """\
-Modo 'robotstudio' NO implementado (stub documentado).
+POSES_CSV_HEADER = "x,y,z,q1,q2,q3,q4"
 
-comm.mod (ServidorVision) no tiene un comando que devuelva la pose y no se modifica
-en esta tarea. test.mod tiene GET_POSE, pero devuelve solo x,y,z y con tool0.
-Haría falta un comando nuevo en comm.mod, por ejemplo:
-
-    ELSEIF msg = "GET_POSE" THEN
-        p_actual := CRobT(\\Tool:=tVision \\WObj:=wobj0);
-        SocketSend cliente \\Str:="POSE," + NumToStr(p_actual.trans.x,2) + ","
-            + NumToStr(p_actual.trans.y,2) + "," + NumToStr(p_actual.trans.z,2) + ","
-            + NumToStr(p_actual.rot.q1,5) + "," + NumToStr(p_actual.rot.q2,5) + ","
-            + NumToStr(p_actual.rot.q3,5) + "," + NumToStr(p_actual.rot.q4,5);
-
-(OJO: un string RAPID tiene máximo 80 caracteres; 3 números con 2 decimales + 4 con 5
-decimales + comas ronda 70-75. Si no cabe, mandar posición y cuaternión en dos
-respuestas o usar \\RawData.) Mientras tanto: graba poses con jog, guárdalas en un CSV
-(x,y,z,q1,q2,q3,q4) y usa --poses csv --csv <archivo>.
-"""
+# Diferencia máxima aceptable entre la pose pedida con MOVE_POSE y la leída con GET_POSE.
+# GET_POSE redondea a 0.01 mm y 1e-6 en el cuaternión (~1e-4°); MoveL ... fine llega
+# exacto en el simulador. Diferencias mayores indican otra convención de OrientZYX.
+CMD_VS_READ_TRANS_MM = 0.5
+CMD_VS_READ_ROT_DEG = 0.1
 
 
 # ------------------------------------------------------------------ utilidades
@@ -110,25 +101,112 @@ def load_poses_csv(path: str) -> list:
     return poses
 
 
+def save_poses_csv(path: str, poses_T, comment: str = "") -> None:
+    """Guarda poses 4x4 como ``x,y,z,q1,q2,q3,q4`` (mm, cuaternión RAPID)."""
+    with open(path, "w", newline="\n", encoding="utf-8") as fh:
+        if comment:
+            for line in comment.splitlines():
+                fh.write(f"# {line}\n")
+        fh.write(POSES_CSV_HEADER + "\n")
+        for T in poses_T:
+            fh.write(",".join(f"{v:.6f}" for v in T_to_pose_rapid(T)) + "\n")
+
+
+def order_by_rotation(poses_T, start_R):
+    """Ordena las poses (vecino más cercano) para minimizar el cambio de orientación
+    entre movimientos consecutivos: MOVE_POSE hereda robconf de la pose actual."""
+    remaining = list(poses_T)
+    ordered, R = [], start_R
+    while remaining:
+        i = min(range(len(remaining)), key=lambda k: rotation_angle_deg(R, remaining[k][:3, :3]))
+        T = remaining.pop(i)
+        ordered.append(T)
+        R = T[:3, :3]
+    return ordered
+
+
+def collect_robotstudio_poses(args, scene: SyntheticScene) -> list:
+    """Mueve el robot de RobotStudio por poses sintéticas y lee la pose real con GET_POSE.
+
+    Requiere robot/rapid/comm.mod (con GET_POSE) en ejecución. Devuelve las poses
+    LEÍDAS (4x4) de los movimientos que respondieron OK, y las guarda en CSV.
+    """
+    from robot.client import RobotVisionController
+
+    rng = np.random.default_rng([args.seed, 7])
+    targets = scene.sample_gripper_poses(args.rs_n_poses, rng)
+    robot = RobotVisionController(host=args.host, port=args.port, timeout=args.rs_timeout)
+
+    if args.rs_dry_run:
+        print("[robotstudio] --rs-dry-run: comandos que se enviarían (sin conectar):")
+        for T in order_by_rotation(targets, np.eye(3)):
+            rx, ry, rz = R_to_euler_rapid(T[:3, :3])
+            print(f"    MOVE_POSE,{T[0, 3]:.2f},{T[1, 3]:.2f},{T[2, 3]:.2f},{rx:.2f},{ry:.2f},{rz:.2f}")
+        raise SystemExit(0)
+
+    if not robot.connect():
+        raise SystemExit("[robotstudio] No se pudo conectar. ¿Está comm.mod (con GET_POSE) en ejecución?")
+    read_poses, rows = [], []
+    try:
+        start = robot.get_pose()
+        if start is None:
+            raise SystemExit("[robotstudio] GET_POSE no respondió POSE,... ¿Recargaste comm.mod con GET_POSE?")
+        targets = order_by_rotation(targets, pose_rapid_to_T(*start)[:3, :3])
+        for i, T in enumerate(targets, start=1):
+            rx, ry, rz = R_to_euler_rapid(T[:3, :3])
+            try:
+                ok = robot.move_pose_euler(T[0, 3], T[1, 3], T[2, 3], rx, ry, rz)
+                pose = robot.get_pose() if ok else None
+            except OSError as exc:  # RAPID se detuvo (p. ej. error de movimiento) y cerró el socket
+                print(f"[robotstudio] Conexión perdida en la pose {i}: {exc}. Se usan las {len(read_poses)} anteriores.")
+                break
+            if pose is None:
+                print(f"[robotstudio] Pose {i}/{len(targets)}: MOVE_POSE sin OK; se omite.")
+                continue
+            T_read = pose_rapid_to_T(*pose)
+            dt, dr = pose_error(T_read, T)
+            rows.append((i, dt, dr))
+            read_poses.append(T_read)
+            print(f"[robotstudio] Pose {i}/{len(targets)}: pedida vs. leída = {dt:.3f} mm, {dr:.4f}°")
+    finally:
+        robot.disconnect()
+
+    if rows:
+        max_dt = max(r[1] for r in rows)
+        max_dr = max(r[2] for r in rows)
+        ok_conv = max_dt <= CMD_VS_READ_TRANS_MM and max_dr <= CMD_VS_READ_ROT_DEG
+        print(f"[robotstudio] Máx. diferencia pedida vs. leída: {max_dt:.3f} mm, {max_dr:.4f}° -> "
+              + ("convención OrientZYX/cuaternión CONSISTENTE" if ok_conv else
+                 "¡REVISAR! la convención de orientación no coincide (ver docs/coordinate_frames.md)"))
+    os.makedirs(args.out, exist_ok=True)
+    csv_path = os.path.join(args.out, "robotstudio_poses.csv")
+    save_poses_csv(csv_path, read_poses,
+                   "Poses LEÍDAS con GET_POSE (tVision, wobj0) tras MOVE_POSE a poses sintéticas.\n"
+                   f"semilla {args.seed}, alcance {args.reach} mm. Reutilizable con --poses csv.")
+    print(f"[robotstudio] {len(read_poses)} poses guardadas en {csv_path}")
+    return read_poses
+
+
 def make_pose_source(args, scene: SyntheticScene):
     """Devuelve ``sample(n, rng, mode) -> lista de T_base_gripper`` según --poses."""
     if args.poses == "synthetic":
         return lambda n, rng, mode="varied": scene.sample_gripper_poses(n, rng, mode=mode)
 
     if args.poses == "robotstudio":
-        print(ROBOTSTUDIO_HELP)
-        raise SystemExit(2)
-
-    if not args.csv:
-        raise SystemExit("--poses csv requiere --csv <archivo>")
-    all_poses = load_poses_csv(args.csv)
+        all_poses = collect_robotstudio_poses(args, scene)
+        tag = "robotstudio"
+    else:
+        if not args.csv:
+            raise SystemExit("--poses csv requiere --csv <archivo>")
+        all_poses = load_poses_csv(args.csv)
+        tag = "csv"
     if not args.no_visibility_filter:
         visible = [T for T in all_poses if scene.is_visible(T)]
-        print(f"[csv] {len(visible)}/{len(all_poses)} poses con el tablero visible "
+        print(f"[{tag}] {len(visible)}/{len(all_poses)} poses con el tablero visible "
               f"según la cámara simulada (usa --no-visibility-filter para desactivar).")
         all_poses = visible
     if len(all_poses) < 3:
-        raise SystemExit("[csv] Se necesitan al menos 3 poses utilizables.")
+        raise SystemExit(f"[{tag}] Se necesitan al menos 3 poses utilizables.")
 
     def sample(n, rng, mode="varied"):
         if mode != "varied":
@@ -309,7 +387,16 @@ def build_parser():
                    help="Origen de las poses del robot (las detecciones siempre se simulan).")
     p.add_argument("--csv", help="Archivo x,y,z,q1,q2,q3,q4 (mm, orden RAPID) para --poses csv.")
     p.add_argument("--no-visibility-filter", action="store_true",
-                   help="En modo csv, no descartar poses con el tablero no visible.")
+                   help="En modo csv/robotstudio, no descartar poses con el tablero no visible.")
+    rs = p.add_argument_group("modo robotstudio (requiere comm.mod con GET_POSE en ejecución)")
+    rs.add_argument("--host", default="127.0.0.1")
+    rs.add_argument("--port", type=int, default=55555)
+    rs.add_argument("--rs-n-poses", type=int, default=20,
+                    help="Poses sintéticas a las que se mueve el robot (se leen con GET_POSE).")
+    rs.add_argument("--rs-timeout", type=float, default=60.0,
+                    help="Timeout del socket (s); un MoveL largo tarda varios segundos.")
+    rs.add_argument("--rs-dry-run", action="store_true",
+                    help="Solo imprime los MOVE_POSE que se enviarían, sin conectar.")
     p.add_argument("--n-poses", type=int, default=15, help="Poses por calibración en [1], [2a] y [3].")
     p.add_argument("--pose-counts", default="5,10,15,20,30", help="Barrido de número de poses [2b].")
     p.add_argument("--noise-trans-mm", default="0,0.5,1,2,4",
@@ -352,10 +439,10 @@ def main(argv=None):
 
     scene = SyntheticScene.from_config(SceneConfig(reach_mm=float(args.reach)))
     sample = make_pose_source(args, scene)
-    if args.poses == "csv":
+    if args.poses != "synthetic":
         too_many = [n for n in pose_counts + [args.n_poses] if n > sample.n_available]
         if too_many:
-            print(f"[csv] Aviso: se piden {too_many} poses pero solo hay {sample.n_available}; se usan todas.")
+            print(f"[{args.poses}] Aviso: se piden {too_many} poses pero solo hay {sample.n_available}; se usan todas.")
 
     os.makedirs(args.out, exist_ok=True)
     print(f"Escena: alcance {args.reach} mm, cámara en {scene.config.cam_position_mm} mm, "
