@@ -28,6 +28,7 @@ from hardware.device import get_device
 from inference.post_process import post_process_output
 from utils.data.camera_data import CameraData
 from utils.dataset_processing.grasp import detect_grasps
+from local_paths import model_path, resolve_network
 
 
 # ============================== CONFIGURACIÓN ==============================
@@ -36,17 +37,19 @@ from utils.dataset_processing.grasp import detect_grasps
 # entrenado con RGB-D (4 canales) NO se puede correr con USE_DEPTH=0,
 # USE_RGB=1 (3 canales) y viceversa: eso es justo el error
 # "expected input[...] to have 4 channels, but got 3 channels instead".
-path_dict = {
-    "jacquard-rgbd-grconvnet3-drop0-ch32": "/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/trained-models/jacquard-rgbd-grconvnet3-drop0-ch32/epoch_48_iou_0.93",
-    "jacquard-rgb-grconvnet3-drop0-ch32": "/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/trained-models/jacquard-rgb-grconvnet3-drop0-ch32/epoch_48_iou_0.92",
-    "cornell_rgb" : '/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/logs/260831_1231_training_cornell_rgb/epoch_48_iou_0.92',
-    "cornell-rgbd":"/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98"
-}
+# Rutas centralizadas en local_paths.py (sobrescribibles con --network,
+# GRCONVNET_NETWORK o GRCONVNET_ROOT).
+path_dict = {key: model_path(key) for key in (
+    "jacquard-rgbd-grconvnet3-drop0-ch32",
+    "jacquard-rgb-grconvnet3-drop0-ch32",
+    "cornell_rgb",
+    "cornell-rgbd",
+)}
 
 
 
 
-NETWORK_PATH = path_dict["cornell-rgbd"]  # Cambiar a otro checkpoint si se quiere.
+NETWORK_PATH = resolve_network(path_dict["cornell-rgbd"])  # Cambiar a otro checkpoint si se quiere.
 # Backend de cámara: 'web' (webcam vía OpenCV) o 'realsense' (Intel RealSense).
 CAMERA_TYPE = 'realsense'
 # CAMERA_TYPE = 'web'  # Cambiar a 'web' si se quiere usar una webcam normal.

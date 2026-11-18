@@ -1,9 +1,12 @@
 from inference.grasp_generator import GraspGenerator
+from local_paths import model_path, resolve_network
 
 if __name__ == '__main__':
     generator = GraspGenerator(
         cam_id=830112070066,
-        saved_model_path='/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/trained-models/jacquard-rgbd-grconvnet3-drop0-ch32/epoch_48_iou_0.93',
+        # Ruta centralizada en local_paths.py (sobrescribible con --network,
+        # GRCONVNET_NETWORK o GRCONVNET_ROOT).
+        saved_model_path=resolve_network(model_path("jacquard-rgbd-grconvnet3-drop0-ch32")),
         visualize=True
     )
     generator.load_model()

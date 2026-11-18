@@ -9,16 +9,18 @@ from hardware.camera import RealSenseCamera
 from hardware.camera_web import WebCamera
 from hardware.device import get_device
 from inference.post_process import post_process_output
+from local_paths import model_path, resolve_network
 from utils.data.camera_data import CameraData
 from utils.dataset_processing.grasp import detect_grasps
 
 logging.basicConfig(level=logging.INFO)
 
-# Path to the trained model checkpoint.
+# Path to the trained model checkpoint (rutas centralizadas en local_paths.py;
+# sobrescribible con --network, GRCONVNET_NETWORK o GRCONVNET_ROOT).
 # Only RGB
-NETWORK_PATH = "/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/logs/260831_1231_training_cornell_rgb/epoch_48_iou_0.92"
-# RGB-D Jacquard 
-# NETWORK_PATH = "/media/ulises-calderon/SteamDisk/Recuperacion/Escuela/9no Semestre/Robot Vision/NeuralModel/robotic-grasping/trained-models/jacquard-rgbd-grconvnet3-drop0-ch32/epoch_48_iou_0.93"
+NETWORK_PATH = resolve_network(model_path("cornell_rgb"))
+# RGB-D Jacquard
+# NETWORK_PATH = resolve_network(model_path("jacquard-rgbd-grconvnet3-drop0-ch32"))
 
 # Camera backend to use: 'web' or 'realsense'.
 CAMERA_TYPE = 'realsense'
