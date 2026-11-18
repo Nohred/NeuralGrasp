@@ -1,0 +1,29 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# --- Resultados generados por los experimentos ---
+results/
+experiments/*/results/
+
+# --- Archivos pesados de la red (NO se versionan; ver NeuralModel/README.md) ---
+# Dataset Cornell/Jacquard
+NeuralModel/robotic-grasping/data/
+# Checkpoints (torch.save del modelo completo, archivos sin extensión epoch_XX_iou_Y)
+**/epoch_*_iou_*
+# Eventos de TensorBoard
+**/events.out.tfevents.*
+# Salidas de visualización del fork
+NeuralModel/robotic-grasping/results/
+
+# --- Varios ---
+*.log
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
