@@ -6,7 +6,10 @@ import socket
 import pytest
 
 from robot.client.rapid_client import RobotVisionController
-from tests.fake_rapid_server import FakeRapidServer, reply_for
+import numpy as np
+
+from calibration.transforms import R_to_quat_rapid, euler_rapid_to_R
+from tests.fake_rapid_server import P_HOME, FakeRapidServer, FakeRapidState, reply_for
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -21,9 +24,16 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     ("GRIPPER,", "ERR_FORMATO"),
     ("FOO,1", "ERR_CMD_NO_RECONOCIDO"),
     ("PING", "ERR_SINTAXIS"),
+    ("GET_POSE", "POSE,281.85,5.73,310.95,0.044739,-0.811529,0.582552,-0.007207"),
 ])
 def test_fake_server_reply_table(msg, expected):
     assert reply_for(msg) == expected
+
+
+def test_get_pose_reply_fits_rapid_string():
+    # Peor caso: coordenadas de 3 cifras negativas y componentes negativas del cuaternión.
+    st = FakeRapidState(pose=(-475.55, -475.55, -475.55, -0.5, -0.5, -0.5, -0.5))
+    assert len(st.handle("GET_POSE")) <= 80
 
 
 def test_client_basic_commands():
@@ -43,6 +53,29 @@ def test_client_basic_commands():
         "GRIPPER,0",
         "FOO,1",
     ]
+
+
+def test_get_pose_follows_moves():
+    with FakeRapidServer() as srv:
+        robot = RobotVisionController(port=srv.port, timeout=5.0)
+        assert robot.connect()
+        home = robot.get_pose()
+        assert np.allclose(home[:3], P_HOME[:3]) and np.allclose(home[3:], P_HOME[3:], atol=1e-6)
+        assert robot.move_pose_euler(300, -20, 150, 10, 170, -30)
+        pose = robot.get_pose()
+        robot.disconnect()
+    assert np.allclose(pose[:3], [300, -20, 150])
+    q_expected = R_to_quat_rapid(euler_rapid_to_R(10, 170, -30))
+    assert np.allclose(pose[3:], q_expected, atol=1e-6)
+    assert srv.too_long == []
+
+
+def test_get_pose_returns_none_on_unexpected_reply(monkeypatch):
+    robot = RobotVisionController()
+    monkeypatch.setattr(robot, "send_command", lambda cmd: "ERR_SINTAXIS")
+    assert robot.get_pose() is None
+    monkeypatch.setattr(robot, "send_command", lambda cmd: "POSE,1,2,3")
+    assert robot.get_pose() is None
 
 
 def test_send_without_connection_returns_err():

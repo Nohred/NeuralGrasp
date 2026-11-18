@@ -33,6 +33,7 @@ MODULE ServidorVision
         VAR string cmd;
         VAR string payload;
         VAR robtarget p_destino;
+        VAR robtarget p_actual;
 
         WHILE TRUE DO
             SocketReceive cliente \Str:=msg \Time:=WAIT_MAX;
@@ -42,6 +43,13 @@ MODULE ServidorVision
             IF msg = "HOME" THEN
                 MoveJ pHome, v500, z50, tVision \WObj:=wobj0;
                 SocketSend cliente \Str:="OK";
+
+            ! Pose actual del TCP (tVision) en wobj0, para calibracion mano-ojo.
+            ! Respuesta: POSE,x,y,z,q1,q2,q3,q4  (mm con 2 decimales, cuaternion RAPID
+            ! [w,x,y,z] con 6 decimales). Peor caso ~71 caracteres (< 80 de un string RAPID).
+            ELSEIF msg = "GET_POSE" THEN
+                p_actual := CRobT(\Tool:=tVision \WObj:=wobj0);
+                SocketSend cliente \Str:="POSE," + NumToStr(p_actual.trans.x,2) + "," + NumToStr(p_actual.trans.y,2) + "," + NumToStr(p_actual.trans.z,2) + "," + NumToStr(p_actual.rot.q1,6) + "," + NumToStr(p_actual.rot.q2,6) + "," + NumToStr(p_actual.rot.q3,6) + "," + NumToStr(p_actual.rot.q4,6);
 
             ! ----------------- COMANDOS CON PARAMETROS -----------------
             ELSEIF pos_coma > 0 THEN

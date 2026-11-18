@@ -3,10 +3,11 @@
 Protocolo (ver docs/coordinate_frames.md y robot/rapid/README.md):
   - Al conectar, el servidor manda un saludo que se lee con ``recv``.
   - Request/response síncrono: un ``sendall`` -> un ``recv``. Texto ASCII sin delimitador.
-  - Comandos: ``HOME``, ``MOVE_POSE,x,y,z,rx,ry,rz``, ``GRIPPER,1|0`` (y ``GRASP``, sin método aquí).
+  - Comandos: ``HOME``, ``GET_POSE``, ``MOVE_POSE,x,y,z,rx,ry,rz``, ``GRIPPER,1|0``
+    (y ``GRASP``, sin método aquí).
   - Respuestas: ``OK``, ``ERR_FORMATO``, ``ERR_CMD_NO_RECONOCIDO``, ``ERR_SINTAXIS``.
 
-Este archivo contiene exactamente la clase que antes vivía en ``robot_comms.py`` (raíz);
+La clase es la que antes vivía en ``robot_comms.py`` (raíz), más ``get_pose()``;
 la secuencia de pick & place se movió a ``experiments/02_robot_pick_place/run.py``.
 """
 import socket
@@ -48,6 +49,24 @@ class RobotVisionController:
         estado = 1 if close_gripper else 0
         cmd = f"GRIPPER,{estado}"
         return self.send_command(cmd) == "OK"
+
+    def get_pose(self):
+        """Pose actual del TCP ``tVision`` en ``wobj0`` (requiere ``GET_POSE`` en comm.mod).
+
+        Devuelve una tupla ``(x, y, z, q1, q2, q3, q4)``: mm y cuaternión en orden RAPID
+        ``[w, x, y, z]``. Si la respuesta no es ``POSE,`` con 7 números, devuelve ``None``.
+        Para una matriz 4x4: ``calibration.pose_rapid_to_T(*pose)``.
+        """
+        resp = self.send_command("GET_POSE")
+        parts = resp.strip().split(",")
+        if len(parts) != 8 or parts[0] != "POSE":
+            print(f"[Error] Respuesta inesperada a GET_POSE: {resp!r}")
+            return None
+        try:
+            return tuple(float(v) for v in parts[1:])
+        except ValueError:
+            print(f"[Error] Respuesta no numerica a GET_POSE: {resp!r}")
+            return None
 
     def disconnect(self):
         if self.sock:
