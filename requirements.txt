@@ -1,0 +1,11 @@
+# Dependencias de calibration/, experiments/04_handeye_synthetic y tests/ (sin hardware).
+# Las del fork de GR-ConvNet están en NeuralModel/robotic-grasping/requirements.txt.
+# Entorno recomendado (conda):
+#   conda create -n neuralgrasp --override-channels -c conda-forge python=3.11 numpy scipy matplotlib pytest
+#   conda activate neuralgrasp
+#   pip install opencv-python
+numpy
+scipy
+opencv-python
+matplotlib
+pytest
